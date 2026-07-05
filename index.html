@@ -167,6 +167,25 @@
   #exportMenu.open { display: flex; }
   #exportMenu .btn { width: 100%; text-align: left; }
 
+  #pngExportOverlay {
+    position: fixed; inset: 0; z-index: 80; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.35);
+  }
+  #pngExportOverlay.open { display: flex; }
+  #pngExportDialog {
+    background: var(--panel); border: 1px solid var(--border-strong);
+    border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,0.3);
+    padding: 16px 18px; min-width: 280px; max-width: 90vw;
+  }
+  #pngExportTitle { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+  #pngExportCheckRow {
+    display: flex; align-items: center; gap: 8px; font-size: 13px;
+    color: var(--text); cursor: pointer; margin-bottom: 16px;
+  }
+  #pngExportCheckRow input { cursor: pointer; }
+  #pngExportDialog .row .btn { flex: 1; text-align: center; font-size: 13px; padding: 7px; }
+
   .note-item .body-edit {
     flex: 1 1 auto; min-width: 0;
     font-family: inherit; font-size: 13px; color: var(--text);
@@ -377,6 +396,19 @@
       <button class="btn" id="shapeEditDoneBtn"></button>
     </div>
     <div id="ctxMenu" class="ctx-menu"></div>
+    <div id="pngExportOverlay">
+      <div id="pngExportDialog">
+        <div id="pngExportTitle"></div>
+        <label id="pngExportCheckRow">
+          <input type="checkbox" id="pngExportNotesCheck">
+          <span id="pngExportCheckLabel"></span>
+        </label>
+        <div class="row">
+          <button class="btn" id="pngExportCancelBtn"></button>
+          <button class="btn" id="pngExportOkBtn"></button>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="sidebar">
     <div id="sidebarHeader"></div>
@@ -419,6 +451,10 @@
       shapeEditDoneBtn: '編集を終了',
       toastPngExported: 'PNG画像を書き出しました',
       toastPngExportFailed: 'PNG画像の書き出しに失敗しました',
+      pngExportTitle: 'PNG画像の書き出し',
+      pngExportCheckLabel: 'メモ情報あり（画像の右側にメモ一覧を追加）',
+      pngExportCancelBtn: 'キャンセル',
+      pngExportOkBtn: '書き出す',
       settingsBtn: '設定',
       sidebarHeader: 'メモ一覧',
       emptyList: 'まだ矢印やエリアがありません。地図上でCtrlを押しながらクリックすると矢印、Shiftを押しながらクリックするとエリア（面）を描けます。',
@@ -472,6 +508,10 @@
       shapeEditDoneBtn: 'Done',
       toastPngExported: 'Exported as PNG image',
       toastPngExportFailed: 'Failed to export PNG image',
+      pngExportTitle: 'Export as PNG',
+      pngExportCheckLabel: 'Include notes (adds a notes list to the right of the image)',
+      pngExportCancelBtn: 'Cancel',
+      pngExportOkBtn: 'Export',
       settingsBtn: 'Settings',
       sidebarHeader: 'Notes',
       emptyList: 'No arrows or areas yet. Hold Ctrl and click to start an arrow, or hold Shift and click to draw an area.',
@@ -631,6 +671,10 @@
     document.getElementById('shapeEditDoneBtn').textContent = t('shapeEditDoneBtn');
     document.getElementById('settingsBtn').title = t('settingsBtn');
     document.getElementById('sidebarHeader').textContent = t('sidebarHeader');
+    document.getElementById('pngExportTitle').textContent = t('pngExportTitle');
+    document.getElementById('pngExportCheckLabel').textContent = t('pngExportCheckLabel');
+    document.getElementById('pngExportCancelBtn').textContent = t('pngExportCancelBtn');
+    document.getElementById('pngExportOkBtn').textContent = t('pngExportOkBtn');
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
     document.getElementById('themeToggle').textContent = theme === 'dark' ? t('themeToLight') : t('themeToDark');
     renderList();
@@ -1945,12 +1989,213 @@
     });
   }
 
-  document.getElementById('exportPngBtn').addEventListener('click', async () => {
-    closeExportMenu();
+  // ---------- PNG export: notes-panel layout helpers ----------
+  const PNG_EXPORT_FONT = '"Hiragino Sans","Yu Gothic","Segoe UI",sans-serif';
+
+  // greedy word-wrap that also falls back to character-wrapping for runs
+  // (like Japanese text) that contain no spaces to break on
+  function wrapTextForCanvas(ctx, text, maxWidth){
+    const paragraphs = String(text).split('\n');
+    const lines = [];
+    paragraphs.forEach(para => {
+      if (para.length === 0) { lines.push(''); return; }
+      const words = para.split(' ');
+      let current = '';
+      words.forEach(word => {
+        const candidate = current ? current + ' ' + word : word;
+        if (ctx.measureText(candidate).width <= maxWidth) {
+          current = candidate;
+          return;
+        }
+        if (current) lines.push(current);
+        if (ctx.measureText(word).width <= maxWidth) {
+          current = word;
+          return;
+        }
+        let sub = '';
+        for (const ch of word) {
+          const test = sub + ch;
+          if (ctx.measureText(test).width > maxWidth && sub) {
+            lines.push(sub);
+            sub = ch;
+          } else {
+            sub = test;
+          }
+        }
+        current = sub;
+      });
+      if (current) lines.push(current);
+    });
+    return lines;
+  }
+
+  function roundedRectPath(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // draws the map canvas plus a notes list to its right, and returns the
+  // combined canvas. Splits into two balanced columns when the single-column
+  // list would run much taller than the map image; if even two columns don't
+  // fit within the map's height, the text/badges are shrunk (down to a
+  // legibility floor) so the overall image height never has to grow.
+  function composeCanvasWithNotes(mapCanvas, w, h){
+    const PADDING = 26;
+    const COL_GAP = 30;
+    const COL_TEXT_WIDTH = 300;
+    const BADGE_GAP = 12;
+    const TITLE_SIZE = 20;
+    const TITLE_GAP = 22;
+    const TEXT_COLOR = '#2b2a26';
+    const MUTED_COLOR = '#8a8578';
+    const SEPARATOR_COLOR = '#ddd9cf';
+
+    const BASE_FONT = 15, BASE_LINE = 21, BASE_GAP = 18, BASE_BADGE = 26, BASE_BADGE_FONT = 13;
+    const MIN_SCALE = 0.55; // legibility floor (~8px note text)
+    const SCALE_STEP = 0.05;
+
+    const measure = document.createElement('canvas').getContext('2d');
+    const nums = numberMap();
+    const rawEntries = combinedSorted();
+
+    function computeItemsAtScale(scale){
+      const fontSize = Math.max(8, Math.round(BASE_FONT * scale));
+      const lineHeight = Math.max(11, Math.round(BASE_LINE * scale));
+      const itemGap = Math.max(6, Math.round(BASE_GAP * scale));
+      const badgeD = Math.max(15, Math.round(BASE_BADGE * scale));
+      const badgeFont = Math.max(8, Math.round(BASE_BADGE_FONT * scale));
+      measure.font = fontSize + 'px ' + PNG_EXPORT_FONT;
+      const items = rawEntries.map(entry => {
+        const ref = entry.ref;
+        const color = ref.color || DEFAULT_COLOR;
+        const hasNote = !!(ref.note && ref.note.trim());
+        const lines = wrapTextForCanvas(measure, hasNote ? ref.note.trim() : t('noNote'), COL_TEXT_WIDTH);
+        const height = Math.max(badgeD, Math.max(lines.length, 1) * lineHeight);
+        return { num: nums[ref.id], color, type: entry.type, lines, hasNote, height };
+      });
+      return { items, fontSize, lineHeight, itemGap, badgeD, badgeFont };
+    }
+
+    const totalHeightOf = (list, gap) => list.reduce((s, it) => s + it.height + gap, 0);
+    const availableH = h - PADDING*2 - TITLE_SIZE - TITLE_GAP;
+
+    function splitIntoColumns(items, itemGap, count){
+      if (count === 1 || items.length === 0) return [items];
+      const total = totalHeightOf(items, itemGap);
+      const target = total / 2;
+      let acc = 0, splitIdx = items.length;
+      for (let i = 0; i < items.length; i++) {
+        acc += items[i].height + itemGap;
+        if (acc >= target) { splitIdx = i + 1; break; }
+      }
+      splitIdx = Math.min(Math.max(splitIdx, 1), items.length - 1);
+      return [items.slice(0, splitIdx), items.slice(splitIdx)];
+    }
+
+    // 1) decide column count (1 or 2) at normal (unscaled) size
+    const baseline = computeItemsAtScale(1);
+    let colCount;
+    if (baseline.items.length === 0 || baseline.items.length <= 4) {
+      colCount = 1;
+    } else if (totalHeightOf(baseline.items, baseline.itemGap) <= availableH) {
+      colCount = 1;
+    } else {
+      colCount = 2;
+    }
+
+    // 2) with that column count fixed, find the largest scale (<=1) that fits
+    // within the map's height; shrinking text/badges instead of growing the
+    // canvas. Falls back to the smallest scale (image grows) only if even
+    // the legibility floor can't fit everything.
+    let layout = null;
+    for (let s = 1; s >= MIN_SCALE - 1e-9; s -= SCALE_STEP) {
+      const computed = computeItemsAtScale(s);
+      const columns = splitIntoColumns(computed.items, computed.itemGap, colCount);
+      const maxColHeight = Math.max(0, ...columns.map(c => totalHeightOf(c, computed.itemGap)));
+      layout = { ...computed, columns, maxColHeight };
+      if (maxColHeight <= availableH || s <= MIN_SCALE) break;
+    }
+
+    const { fontSize, lineHeight, itemGap, badgeD, badgeFont, columns, maxColHeight } = layout;
+    const colWidth = badgeD + BADGE_GAP + COL_TEXT_WIDTH;
+    const panelWidth = PADDING*2 + colCount*colWidth + (colCount - 1)*COL_GAP;
+    const panelHeight = PADDING*2 + TITLE_SIZE + TITLE_GAP + maxColHeight;
+
+    const finalW = w + panelWidth;
+    const finalH = Math.max(h, panelHeight);
+
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = finalW; finalCanvas.height = finalH;
+    const ctx = finalCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, finalW, finalH);
+    ctx.drawImage(mapCanvas, 0, 0);
+
+    ctx.strokeStyle = SEPARATOR_COLOR;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(w + 0.5, 0);
+    ctx.lineTo(w + 0.5, finalH);
+    ctx.stroke();
+
+    ctx.fillStyle = TEXT_COLOR;
+    ctx.font = 'bold ' + TITLE_SIZE + 'px ' + PNG_EXPORT_FONT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(t('sidebarHeader'), w + PADDING, PADDING + TITLE_SIZE - 4);
+
+    const badgeRadius = Math.max(4, Math.round(badgeD * 0.23));
+    const topY = PADDING + TITLE_SIZE + TITLE_GAP;
+    columns.forEach((col, colIdx) => {
+      const colX = w + PADDING + colIdx*(colWidth + COL_GAP);
+      let y = topY;
+      col.forEach(item => {
+        const badgeCx = colX + badgeD/2;
+        const badgeCy = y + item.height/2;
+        const textX = colX + badgeD + BADGE_GAP;
+
+        ctx.fillStyle = item.color;
+        if (item.type === 'area') {
+          roundedRectPath(ctx, colX, badgeCy - badgeD/2, badgeD, badgeD, badgeRadius);
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.arc(badgeCx, badgeCy, badgeD/2, 0, Math.PI*2);
+          ctx.fill();
+        }
+        ctx.fillStyle = contrastTextColor(item.color);
+        ctx.font = 'bold ' + badgeFont + 'px ' + PNG_EXPORT_FONT;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(item.num), badgeCx, badgeCy + 1);
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = (item.hasNote ? '' : 'italic ') + fontSize + 'px ' + PNG_EXPORT_FONT;
+        ctx.fillStyle = item.hasNote ? TEXT_COLOR : MUTED_COLOR;
+        const blockHeight = item.lines.length * lineHeight;
+        const offsetY = (item.height - blockHeight) / 2;
+        item.lines.forEach((line, li) => {
+          ctx.fillText(line, textX, y + offsetY + (li + 1)*lineHeight - Math.round(lineHeight*0.28));
+        });
+
+        y += item.height + itemGap;
+      });
+    });
+
+    return finalCanvas;
+  }
+
+  async function performPngExport(includeNotes){
     const {w,h} = worldSize();
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
+    const mapCanvas = document.createElement('canvas');
+    mapCanvas.width = w; mapCanvas.height = h;
+    const ctx = mapCanvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
     try {
@@ -1985,7 +2230,10 @@
       URL.revokeObjectURL(svgUrl);
       editShapeId = wasEditing;
       renderArrows();
-      canvas.toBlob((blob) => {
+
+      const finalCanvas = includeNotes ? composeCanvasWithNotes(mapCanvas, w, h) : mapCanvas;
+
+      finalCanvas.toBlob((blob) => {
         if (!blob) { showToast(t('toastPngExportFailed')); return; }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -2000,6 +2248,25 @@
       console.error('PNG export failed', err);
       showToast(t('toastPngExportFailed'));
     }
+  }
+
+  const pngExportOverlay = document.getElementById('pngExportOverlay');
+  const pngExportNotesCheck = document.getElementById('pngExportNotesCheck');
+  document.getElementById('exportPngBtn').addEventListener('click', () => {
+    closeExportMenu();
+    pngExportNotesCheck.checked = false;
+    pngExportOverlay.classList.add('open');
+  });
+  document.getElementById('pngExportCancelBtn').addEventListener('click', () => {
+    pngExportOverlay.classList.remove('open');
+  });
+  pngExportOverlay.addEventListener('click', (e) => {
+    if (e.target === pngExportOverlay) pngExportOverlay.classList.remove('open');
+  });
+  document.getElementById('pngExportOkBtn').addEventListener('click', () => {
+    const includeNotes = pngExportNotesCheck.checked;
+    pngExportOverlay.classList.remove('open');
+    performPngExport(includeNotes);
   });
 
   document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importInput').click());
