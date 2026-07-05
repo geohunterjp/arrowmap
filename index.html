@@ -986,17 +986,17 @@
       if (a.bidirectional) shaft.setAttribute('marker-start', 'url(#arrowhead-start-' + colorId(color) + ')');
       // thin mode: shrink stroke width; since the arrowhead markers use the
       // default strokeWidth marker units, the arrowhead tip shrinks along with it
-      shaft.style.strokeWidth = a.thin ? (selected ? '2' : '1.2') : '';
+      shaft.style.strokeWidth = a.thin ? (selected ? '3.5' : '2.6') : '';
 
       g.appendChild(hit); g.appendChild(shaft);
 
       for (let i=1;i<pts.length-1;i++){
         const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
         dot.setAttribute('cx', pts[i].x); dot.setAttribute('cy', pts[i].y);
-        dot.setAttribute('r', a.thin ? 2 : 3);
+        dot.setAttribute('r', a.thin ? 2.5 : 3);
         dot.setAttribute('class', 'bend-dot');
         dot.setAttribute('stroke', color);
-        dot.setAttribute('stroke-width', a.thin ? '1.2' : '2');
+        dot.setAttribute('stroke-width', a.thin ? '1.6' : '2');
         g.appendChild(dot);
       }
 
@@ -1006,7 +1006,7 @@
 
       const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
       circle.setAttribute('cx', numPos.x); circle.setAttribute('cy', numPos.y);
-      circle.setAttribute('r', 10);
+      circle.setAttribute('r', a.thin ? 7 : 10);
       circle.setAttribute('class', 'arrow-num-bg' + (selected ? ' selected' : ''));
       circle.setAttribute('fill', color);
 
@@ -1014,6 +1014,7 @@
       num.setAttribute('x', numPos.x); num.setAttribute('y', numPos.y);
       num.setAttribute('class', 'arrow-num');
       num.style.fill = contrastTextColor(color);
+      num.style.fontSize = a.thin ? '8px' : '';
       num.textContent = nums[a.id];
 
       g.appendChild(circle); g.appendChild(num);
