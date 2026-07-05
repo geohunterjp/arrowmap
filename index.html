@@ -274,6 +274,7 @@
         <div id="settingsMenu">
           <button class="btn" id="themeToggle"></button>
           <button class="btn" id="langToggle"></button>
+          <button class="btn" id="thinDefaultToggle"></button>
         </div>
       </div>
     </div>
@@ -349,7 +350,10 @@
       commonLabel: 'よく使う色',
       bidirLabel: '双方向矢印にする',
       thinLabel: '線を細くする',
+      thinLabelThick: '線を太くする',
       dragHint: 'ドラッグして順番（番号）を入れ替え',
+      thinDefaultOn: '細い線をデフォルトにする',
+      thinDefaultOff: '太い線をデフォルトにする',
       settingsBtn: '設定',
       sidebarHeader: 'メモ一覧',
       emptyList: 'まだ矢印やエリアがありません。地図上でCtrlを押しながらクリックすると矢印、Shiftを押しながらクリックするとエリア（面）を描けます。',
@@ -391,7 +395,10 @@
       commonLabel: 'Common colors',
       bidirLabel: 'Two-way arrow',
       thinLabel: 'Thin line',
+      thinLabelThick: 'Thick line',
       dragHint: 'Drag to reorder (renumber)',
+      thinDefaultOn: 'Make thin lines default',
+      thinDefaultOff: 'Make thick lines default',
       settingsBtn: 'Settings',
       sidebarHeader: 'Notes',
       emptyList: 'No arrows or areas yet. Hold Ctrl and click to start an arrow, or hold Shift and click to draw an area.',
@@ -417,6 +424,7 @@
     }
   };
   let lang = 'ja';
+  let thinDefault = false;
   function t(key){ return STRINGS[lang][key]; }
 
   // ---------- storage adapter (localStorage, works standalone in any browser) ----------
@@ -490,6 +498,7 @@
   const KEY_RECENT_COLORS = 'arrowmap-recent-colors';
   const KEY_LANG = 'arrowmap-lang';
   const KEY_THEME = 'arrowmap-theme';
+  const KEY_THIN_DEFAULT = 'arrowmap-thin-default';
   const keyData = (id) => 'arrowmap-file-data:' + id;
 
   function showToast(msg){
@@ -539,7 +548,8 @@
     document.getElementById('quickAccessLabel').textContent = t('quickAccessLabel');
     document.getElementById('commonLabel').textContent = t('commonLabel');
     document.getElementById('bidirLabel').textContent = t('bidirLabel');
-    document.getElementById('thinLabel').textContent = t('thinLabel');
+    document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
+    document.getElementById('thinDefaultToggle').textContent = thinDefault ? t('thinDefaultOff') : t('thinDefaultOn');
     document.getElementById('settingsBtn').title = t('settingsBtn');
     document.getElementById('sidebarHeader').textContent = t('sidebarHeader');
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
@@ -562,6 +572,22 @@
     const next = cur === 'dark' ? 'light' : 'dark';
     applyTheme(next);
     await storage.set(KEY_THEME, next);
+    closeSettingsMenu();
+  });
+
+  function refreshThinUI(){
+    if (popup.style.display !== 'block') return;
+    const found = findSelected();
+    if (!found || found.type !== 'arrow') return;
+    document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
+    thinCheck.checked = thinDefault ? !found.item.thin : !!found.item.thin;
+  }
+
+  document.getElementById('thinDefaultToggle').addEventListener('click', async () => {
+    thinDefault = !thinDefault;
+    await storage.set(KEY_THIN_DEFAULT, thinDefault ? '1' : '0');
+    applyLanguage();
+    refreshThinUI();
     closeSettingsMenu();
   });
 
@@ -1269,13 +1295,16 @@
       bidirWrap.style.display = 'flex';
       bidirCheck.checked = !!item.bidirectional;
       thinWrap.style.display = 'flex';
-      thinCheck.checked = !!item.thin;
+      document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
+      // when "thin by default" is on, this checkbox instead offers a per-arrow
+      // override to make just this one thicker again
+      thinCheck.checked = thinDefault ? !item.thin : !!item.thin;
     } else {
       bidirWrap.style.display = 'none';
       thinWrap.style.display = 'none';
     }
-    positionPopup(item, type);
     popup.style.display = 'block';
+    positionPopup(item, type);
     renderArrows(); renderList();
     noteText.focus();
   }
@@ -1309,7 +1338,8 @@
   thinCheck.addEventListener('change', () => {
     const found = findSelected();
     if (found && found.type === 'arrow') {
-      found.item.thin = thinCheck.checked;
+      // when thin-by-default is on, a checked box means "make this one thick"
+      found.item.thin = thinDefault ? !thinCheck.checked : thinCheck.checked;
       renderArrows(); scheduleSave();
     }
   });
@@ -1319,10 +1349,16 @@
     const ref = type === 'area' ? boundsCenter(item.points) : item.points[item.points.length - 1];
     const midX = ref.x * scale + panX;
     const midY = ref.y * scale + panY;
+    // measure the popup's actual rendered size (it must already be display:block)
+    // instead of relying on stale hardcoded numbers, so it never gets clipped
+    // at the bottom of the window when its content grows (e.g. new checkboxes)
+    const popW = popup.offsetWidth || 280;
+    const popH = popup.offsetHeight || 420;
     let left = midX + 16, top = midY - 20;
-    if (left + 275 > rect.width) left = midX - 285;
+    if (left + popW > rect.width) left = midX - popW - 10;
+    if (left + popW > rect.width) left = Math.max(10, rect.width - popW - 10);
     if (left < 0) left = 10;
-    if (top + 420 > rect.height) top = Math.max(10, rect.height - 430);
+    if (top + popH > rect.height) top = Math.max(10, rect.height - popH - 10);
     if (top < 0) top = 10;
     popup.style.left = left + 'px';
     popup.style.top = top + 'px';
@@ -1537,7 +1573,7 @@
     pushUndo();
     const id = idCounter++;
     const color = recentColors[0] || DEFAULT_COLOR;
-    arrows.push({id, points: pts, note: '', color, bidirectional: false});
+    arrows.push({id, points: pts, note: '', color, bidirectional: false, thin: thinDefault});
     currentPoints = [];
     renderArrows(); renderList(); scheduleSave();
     openPopupForNoHistory(id);
@@ -1688,6 +1724,10 @@
       const themeRes = await storage.get(KEY_THEME);
       applyTheme((themeRes && themeRes.value) || 'light');
     } catch(e) { applyTheme('light'); }
+    try {
+      const thinRes = await storage.get(KEY_THIN_DEFAULT);
+      thinDefault = !!(thinRes && thinRes.value === '1');
+    } catch(e) { thinDefault = false; }
     await loadRecentColors();
     applyTransform();
     await loadFilesList();
