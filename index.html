@@ -137,6 +137,13 @@
   .note-item { padding: 8px 10px; border-radius: 8px; margin-bottom: 4px; cursor: pointer; border: 1px solid transparent; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
   .note-item:hover { background: var(--accent-soft); }
   .note-item.selected { background: var(--accent-soft); border-color: var(--accent); }
+  .note-item.dragging { opacity: 0.4; }
+  .note-item.drag-over { border-top: 2px solid var(--accent); }
+  .note-item .note-grip {
+    flex: none; cursor: grab; color: var(--text-muted); font-size: 11px; line-height: 18px;
+    letter-spacing: -2px; margin-top: 1px; user-select: none;
+  }
+  .note-item .note-grip:active { cursor: grabbing; }
   .note-item .num {
     flex: none;
     display: inline-flex; align-items: center; justify-content: center;
@@ -167,6 +174,8 @@
   }
   #bidirWrap { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--text); }
   #bidirWrap input { margin: 0; }
+  #thinWrap { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--text); }
+  #thinWrap input { margin: 0; }
   #colorSection { margin-top: 10px; }
   #cpHeaderRow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
   #cpHeaderRow .cpHeaderLabel { font-size: 12px; color: var(--text-muted); }
@@ -299,6 +308,10 @@
         <input type="checkbox" id="bidirCheck">
         <label for="bidirCheck" id="bidirLabel"></label>
       </div>
+      <div id="thinWrap">
+        <input type="checkbox" id="thinCheck">
+        <label for="thinCheck" id="thinLabel"></label>
+      </div>
       <div class="row">
         <button class="btn del" id="deleteArrowBtn"></button>
         <button class="btn" id="closePopupBtn"></button>
@@ -335,6 +348,8 @@
       quickAccessLabel: '最近使った色',
       commonLabel: 'よく使う色',
       bidirLabel: '双方向矢印にする',
+      thinLabel: '線を細くする',
+      dragHint: 'ドラッグして順番（番号）を入れ替え',
       settingsBtn: '設定',
       sidebarHeader: 'メモ一覧',
       emptyList: 'まだ矢印やエリアがありません。地図上でCtrlを押しながらクリックすると矢印、Shiftを押しながらクリックするとエリア（面）を描けます。',
@@ -375,6 +390,8 @@
       quickAccessLabel: 'Recently used',
       commonLabel: 'Common colors',
       bidirLabel: 'Two-way arrow',
+      thinLabel: 'Thin line',
+      dragHint: 'Drag to reorder (renumber)',
       settingsBtn: 'Settings',
       sidebarHeader: 'Notes',
       emptyList: 'No arrows or areas yet. Hold Ctrl and click to start an arrow, or hold Shift and click to draw an area.',
@@ -522,6 +539,7 @@
     document.getElementById('quickAccessLabel').textContent = t('quickAccessLabel');
     document.getElementById('commonLabel').textContent = t('commonLabel');
     document.getElementById('bidirLabel').textContent = t('bidirLabel');
+    document.getElementById('thinLabel').textContent = t('thinLabel');
     document.getElementById('settingsBtn').title = t('settingsBtn');
     document.getElementById('sidebarHeader').textContent = t('sidebarHeader');
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
@@ -833,18 +851,34 @@
   }
 
   // ---------- combined numbering (arrows + areas share one sequence) ----------
+  function orderKey(item){ return (typeof item.order === 'number') ? item.order : item.id; }
   function combinedSorted(){
     const list = [
       ...arrows.map(a => ({ ref: a, type: 'arrow' })),
       ...areas.map(a => ({ ref: a, type: 'area' }))
     ];
-    list.sort((x,y) => x.ref.id - y.ref.id);
+    list.sort((x,y) => orderKey(x.ref) - orderKey(y.ref));
     return list;
   }
   function numberMap(){
     const map = {};
     combinedSorted().forEach((entry, idx) => { map[entry.ref.id] = idx + 1; });
     return map;
+  }
+  // reassigns explicit sequential `order` values to every item, moving
+  // the item with id `fromId` to just before/after the item with id `toId`
+  function reorderItem(fromId, toId){
+    if (fromId === toId) return;
+    const combined = combinedSorted();
+    const fromIdx = combined.findIndex(e => e.ref.id === fromId);
+    const toIdx = combined.findIndex(e => e.ref.id === toId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    pushUndo();
+    const [moved] = combined.splice(fromIdx, 1);
+    const insertAt = combined.findIndex(e => e.ref.id === toId);
+    combined.splice(insertAt, 0, moved);
+    combined.forEach((entry, idx) => { entry.ref.order = idx; });
+    renderArrows(); renderList(); scheduleSave();
   }
 
   // ---------- rendering ----------
@@ -950,16 +984,19 @@
       shaft.setAttribute('stroke', color);
       shaft.setAttribute('marker-end', 'url(#arrowhead-' + colorId(color) + ')');
       if (a.bidirectional) shaft.setAttribute('marker-start', 'url(#arrowhead-start-' + colorId(color) + ')');
+      // thin mode: shrink stroke width; since the arrowhead markers use the
+      // default strokeWidth marker units, the arrowhead tip shrinks along with it
+      shaft.style.strokeWidth = a.thin ? (selected ? '2' : '1.2') : '';
 
       g.appendChild(hit); g.appendChild(shaft);
 
       for (let i=1;i<pts.length-1;i++){
         const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
         dot.setAttribute('cx', pts[i].x); dot.setAttribute('cy', pts[i].y);
-        dot.setAttribute('r', 3);
+        dot.setAttribute('r', a.thin ? 2 : 3);
         dot.setAttribute('class', 'bend-dot');
         dot.setAttribute('stroke', color);
-        dot.setAttribute('stroke-width', '2');
+        dot.setAttribute('stroke-width', a.thin ? '1.2' : '2');
         g.appendChild(dot);
       }
 
@@ -984,6 +1021,7 @@
     });
   }
 
+  let dragFromId = null;
   function renderList(){
     const combined = combinedSorted();
     if (combined.length === 0) {
@@ -996,15 +1034,46 @@
       const color = a.color || DEFAULT_COLOR;
       const item = document.createElement('div');
       item.className = 'note-item' + (a.id === selectedId ? ' selected' : '');
+      item.dataset.id = a.id;
       const hasNote = a.note && a.note.trim();
       const bodyText = hasNote ? a.note : t('noNote');
       const shapeClass = entry.type === 'area' ? 'num square' : 'num';
-      item.innerHTML = `<span class="${shapeClass}" style="background:${color}">${idx+1}</span><span class="body ${!hasNote ? 'empty' : ''}"></span>`;
+      item.innerHTML = `<span class="note-grip" title="${t('dragHint')}">⠿⠿</span><span class="${shapeClass}" style="background:${color}; color:${contrastTextColor(color)}">${idx+1}</span><span class="body ${!hasNote ? 'empty' : ''}"></span>`;
       item.querySelector('.body').textContent = bodyText;
       item.addEventListener('click', () => {
         selectedId = a.id;
         renderArrows(); renderList(); focusOnItem(a, entry.type);
       });
+
+      // drag-and-drop reordering: grabbing the grip and dropping it on
+      // another row swaps their order, which renumbers both items
+      item.draggable = true;
+      item.addEventListener('dragstart', (e) => {
+        dragFromId = a.id;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', String(a.id)); } catch(err) {}
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        dragFromId = null;
+        noteList.querySelectorAll('.note-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+      item.addEventListener('dragover', (e) => {
+        if (dragFromId == null || dragFromId === a.id) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        item.classList.add('drag-over');
+      });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over');
+        if (dragFromId == null || dragFromId === a.id) return;
+        reorderItem(dragFromId, a.id);
+        dragFromId = null;
+      });
+
       noteList.appendChild(item);
     });
   }
@@ -1187,6 +1256,8 @@
 
   const bidirWrap = document.getElementById('bidirWrap');
   const bidirCheck = document.getElementById('bidirCheck');
+  const thinWrap = document.getElementById('thinWrap');
+  const thinCheck = document.getElementById('thinCheck');
 
   function openPopupCommon(id, type, item){
     selectedId = id;
@@ -1196,8 +1267,11 @@
     if (type === 'arrow') {
       bidirWrap.style.display = 'flex';
       bidirCheck.checked = !!item.bidirectional;
+      thinWrap.style.display = 'flex';
+      thinCheck.checked = !!item.thin;
     } else {
       bidirWrap.style.display = 'none';
+      thinWrap.style.display = 'none';
     }
     positionPopup(item, type);
     popup.style.display = 'block';
@@ -1227,6 +1301,14 @@
     const found = findSelected();
     if (found && found.type === 'arrow') {
       found.item.bidirectional = bidirCheck.checked;
+      renderArrows(); scheduleSave();
+    }
+  });
+
+  thinCheck.addEventListener('change', () => {
+    const found = findSelected();
+    if (found && found.type === 'arrow') {
+      found.item.thin = thinCheck.checked;
       renderArrows(); scheduleSave();
     }
   });
