@@ -127,9 +127,52 @@
   .arrow-num-bg.selected { stroke: #1e6e4a; stroke-width: 2; }
   .bend-dot { fill: #fff; pointer-events: none; }
   .area-shape { pointer-events: all; cursor: pointer; }
-  .area-shape.selected { stroke-width: 3.5 !important; }
   .area-num-bg { pointer-events: none; }
   .area-num-bg.selected { stroke: #1e6e4a; stroke-width: 2; }
+  .vertex-handle { fill: #fff; stroke: var(--accent); stroke-width: 2.5; cursor: move; pointer-events: all; }
+  .vertex-handle:hover { fill: var(--accent); }
+  .label-handle { fill: var(--accent); stroke: #fff; stroke-width: 2; cursor: move; opacity: 0.9; pointer-events: all; }
+  #shapeEditBanner {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+    z-index: 25; background: var(--panel); border: 1px solid var(--accent);
+    border-radius: 9px; box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+    padding: 8px 10px; display: none; align-items: center; gap: 10px;
+    font-size: 12px; color: var(--text);
+  }
+  #shapeEditBanner.open { display: flex; }
+  #shapeEditBanner .btn { font-size: 12px; padding: 5px 10px; }
+
+  .ctx-menu {
+    position: fixed; z-index: 60; background: var(--panel);
+    border: 1px solid var(--border-strong); border-radius: 9px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25); padding: 6px; display: none;
+    flex-direction: column; gap: 2px; min-width: 150px;
+  }
+  .ctx-menu.open { display: flex; }
+  .ctx-menu button {
+    background: none; border: none; text-align: left; padding: 7px 10px;
+    font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;
+    font-family: inherit;
+  }
+  .ctx-menu button:hover { background: var(--accent-soft); }
+
+  #exportWrap { position: relative; }
+  #exportMenu {
+    position: absolute; top: calc(100% + 6px); left: 0;
+    background: var(--panel); border: 1px solid var(--border-strong);
+    border-radius: 9px; box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+    padding: 6px; display: none; flex-direction: column; gap: 4px;
+    z-index: 50; min-width: 170px;
+  }
+  #exportMenu.open { display: flex; }
+  #exportMenu .btn { width: 100%; text-align: left; }
+
+  .note-item .body-edit {
+    flex: 1 1 auto; min-width: 0;
+    font-family: inherit; font-size: 13px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px;
+    padding: 5px 6px; resize: vertical; min-height: 46px;
+  }
 
   #sidebar { width: 300px; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; z-index: 15; }
   #sidebarHeader { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-muted); }
@@ -265,7 +308,13 @@
       <button class="btn" id="zoomReset">100%</button>
       <button class="btn" id="zoomIn">＋</button>
       <div class="sep"></div>
-      <button class="btn" id="exportBtn"></button>
+      <div id="exportWrap">
+        <button class="btn" id="exportBtn"></button>
+        <div id="exportMenu">
+          <button class="btn" id="exportJsonBtn"></button>
+          <button class="btn" id="exportPngBtn"></button>
+        </div>
+      </div>
       <button class="btn" id="importBtn"></button>
       <button class="btn" id="clearBtn"></button>
       <span id="hint"></span>
@@ -314,12 +363,20 @@
         <label for="thinCheck" id="thinLabel"></label>
       </div>
       <div class="row">
+        <button class="btn" id="editShapeBtn" style="flex:1; text-align:center;"></button>
+      </div>
+      <div class="row">
         <button class="btn del" id="deleteArrowBtn"></button>
         <button class="btn" id="closePopupBtn"></button>
       </div>
     </div>
     <div id="toast"></div>
     <div id="hoverTip"></div>
+    <div id="shapeEditBanner">
+      <span id="shapeEditBannerText"></span>
+      <button class="btn" id="shapeEditDoneBtn"></button>
+    </div>
+    <div id="ctxMenu" class="ctx-menu"></div>
   </div>
   <div id="sidebar">
     <div id="sidebarHeader"></div>
@@ -338,6 +395,7 @@
       loadImage: '画像を読み込む',
       undo: '戻る', redo: '進む',
       exportBtn: '書き出し', importBtn: '読み込み(JSON)', clearBtn: 'メモを全消去',
+      exportJsonBtn: 'JSONで書き出す', exportPngBtn: 'PNG画像で書き出す',
       themeToDark: 'ダークモード', themeToLight: 'ライトモード',
       langToggle: 'English',
       hint: 'Ctrl+クリック：矢印　Ctrl+右クリック：矢印を曲げる　Shift+クリック：エリア（面）　それ以外のドラッグ：地図移動',
@@ -354,6 +412,13 @@
       dragHint: 'ドラッグして順番（番号）を入れ替え',
       thinDefaultOn: '細い線をデフォルトにする',
       thinDefaultOff: '太い線をデフォルトにする',
+      ctxEditShape: '形を編集する',
+      editShapeBtn: '形を編集する',
+      ctxEditNote: 'メモを編集する',
+      shapeEditBannerText: '点をドラッグして形を、丸数字をドラッグしてラベル位置を調整できます',
+      shapeEditDoneBtn: '編集を終了',
+      toastPngExported: 'PNG画像を書き出しました',
+      toastPngExportFailed: 'PNG画像の書き出しに失敗しました',
       settingsBtn: '設定',
       sidebarHeader: 'メモ一覧',
       emptyList: 'まだ矢印やエリアがありません。地図上でCtrlを押しながらクリックすると矢印、Shiftを押しながらクリックするとエリア（面）を描けます。',
@@ -383,6 +448,7 @@
       loadImage: 'Load image',
       undo: 'Undo', redo: 'Redo',
       exportBtn: 'Export', importBtn: 'Import (JSON)', clearBtn: 'Clear notes',
+      exportJsonBtn: 'Export as JSON', exportPngBtn: 'Export as PNG image',
       themeToDark: 'Dark mode', themeToLight: 'Light mode',
       langToggle: '日本語',
       hint: 'Ctrl+click: arrow   Ctrl+right-click: bend the arrow   Shift+click: area   Drag elsewhere: pan map',
@@ -399,6 +465,13 @@
       dragHint: 'Drag to reorder (renumber)',
       thinDefaultOn: 'Make thin lines default',
       thinDefaultOff: 'Make thick lines default',
+      ctxEditShape: 'Edit shape',
+      editShapeBtn: 'Edit shape',
+      ctxEditNote: 'Edit note',
+      shapeEditBannerText: 'Drag the points to reshape it, or drag the numbered badge to move the label',
+      shapeEditDoneBtn: 'Done',
+      toastPngExported: 'Exported as PNG image',
+      toastPngExportFailed: 'Failed to export PNG image',
       settingsBtn: 'Settings',
       sidebarHeader: 'Notes',
       emptyList: 'No arrows or areas yet. Hold Ctrl and click to start an arrow, or hold Shift and click to draw an area.',
@@ -485,6 +558,7 @@
   let selectedId = null;
   let idCounter = 1;
   let imgDataUrl = null;
+  let editShapeId = null; // id of the arrow/area currently in vertex-edit mode
   const AREA_FILL_OPACITY = 0.28;
   const AREA_STROKE_OPACITY = 0.85;
 
@@ -536,6 +610,8 @@
     document.getElementById('undoBtn').textContent = t('undo');
     document.getElementById('redoBtn').textContent = t('redo');
     document.getElementById('exportBtn').textContent = t('exportBtn');
+    document.getElementById('exportJsonBtn').textContent = t('exportJsonBtn');
+    document.getElementById('exportPngBtn').textContent = t('exportPngBtn');
     document.getElementById('importBtn').textContent = t('importBtn');
     document.getElementById('clearBtn').textContent = t('clearBtn');
     document.getElementById('langToggle').textContent = t('langToggle');
@@ -544,12 +620,15 @@
     noteText.placeholder = t('notePlaceholder');
     document.getElementById('deleteArrowBtn').textContent = t('deleteArrowBtn');
     document.getElementById('closePopupBtn').textContent = t('closePopupBtn');
+    document.getElementById('editShapeBtn').textContent = t('editShapeBtn');
     document.getElementById('colorLabel').textContent = t('colorLabel');
     document.getElementById('quickAccessLabel').textContent = t('quickAccessLabel');
     document.getElementById('commonLabel').textContent = t('commonLabel');
     document.getElementById('bidirLabel').textContent = t('bidirLabel');
     document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
     document.getElementById('thinDefaultToggle').textContent = thinDefault ? t('thinDefaultOff') : t('thinDefaultOn');
+    document.getElementById('shapeEditBannerText').textContent = t('shapeEditBannerText');
+    document.getElementById('shapeEditDoneBtn').textContent = t('shapeEditDoneBtn');
     document.getElementById('settingsBtn').title = t('settingsBtn');
     document.getElementById('sidebarHeader').textContent = t('sidebarHeader');
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
@@ -578,7 +657,7 @@
   function refreshThinUI(){
     if (popup.style.display !== 'block') return;
     const found = findSelected();
-    if (!found || found.type !== 'arrow') return;
+    if (!found) return;
     document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
     thinCheck.checked = thinDefault ? !found.item.thin : !!found.item.thin;
   }
@@ -591,7 +670,41 @@
     closeSettingsMenu();
   });
 
-  // ---------- settings gear menu ----------
+  // ---------- generic right-click context menu ----------
+  const ctxMenu = document.getElementById('ctxMenu');
+  function closeCtxMenu(){ ctxMenu.classList.remove('open'); ctxMenu.innerHTML = ''; }
+  function showCtxMenu(clientX, clientY, items){
+    ctxMenu.innerHTML = '';
+    items.forEach(it => {
+      const b = document.createElement('button');
+      b.textContent = it.label;
+      b.addEventListener('click', () => { closeCtxMenu(); it.onClick(); });
+      ctxMenu.appendChild(b);
+    });
+    ctxMenu.classList.add('open');
+    // clamp inside the viewport
+    const menuW = 190, menuH = items.length * 34 + 12;
+    let x = clientX, y = clientY;
+    if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8;
+    if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8;
+    ctxMenu.style.left = x + 'px';
+    ctxMenu.style.top = y + 'px';
+  }
+  function showShapeCtxMenu(e, id){
+    showCtxMenu(e.clientX, e.clientY, [
+      { label: t('ctxEditShape'), onClick: () => enterShapeEdit(id) }
+    ]);
+  }
+  document.addEventListener('click', (e) => {
+    if (!ctxMenu.classList.contains('open')) return;
+    if (e.target.closest('#ctxMenu')) return;
+    closeCtxMenu();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeCtxMenu();
+  });
+
+
   const settingsMenu = document.getElementById('settingsMenu');
   function closeSettingsMenu(){ settingsMenu.classList.remove('open'); }
   document.getElementById('settingsBtn').addEventListener('click', (e) => {
@@ -831,6 +944,20 @@
     return points[points.length - 1];
   }
   function colorId(hex){ return hex.replace('#','').toLowerCase(); }
+  // the un-offset "natural" position for an item's numbered badge/label
+  function rawLabelBase(item, type){
+    return type === 'area'
+      ? boundsCenter(item.points)
+      : (item.bidirectional ? pointAtT(item.points, 0.5) : item.points[0]);
+  }
+  // the position of the numbered badge/label for an item, including any
+  // manual offset the user dragged it to (so it can be moved off of
+  // important background map content)
+  function labelPos(item, type){
+    const base = rawLabelBase(item, type);
+    const off = item.labelOffset || {dx: 0, dy: 0};
+    return { x: base.x + off.dx, y: base.y + off.dy };
+  }
   // returns '#000' or '#fff' depending on which is more readable on top of the given hex color
   function contrastTextColor(hex){
     if (!hex) return '#fff';
@@ -952,6 +1079,7 @@
     areas.forEach((a) => {
       const color = a.color || DEFAULT_COLOR;
       const selected = a.id === selectedId;
+      const editing = a.id === editShapeId;
       const pts = a.points;
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
 
@@ -962,19 +1090,20 @@
       shape.setAttribute('fill-opacity', AREA_FILL_OPACITY);
       shape.setAttribute('stroke', color);
       shape.setAttribute('stroke-opacity', AREA_STROKE_OPACITY);
-      shape.setAttribute('stroke-width', '2');
+      shape.style.strokeWidth = a.thin ? (selected ? '2.2' : '1.3') : (selected ? '3.5' : '2');
       shape.addEventListener('mousedown', (e) => e.stopPropagation());
       shape.addEventListener('click', (e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.stopPropagation(); openPopupFor(a.id); });
       shape.addEventListener('mouseenter', (e) => showHoverTip(a.note, e));
       shape.addEventListener('mousemove', (e) => moveHoverTip(e));
       shape.addEventListener('mouseleave', hideHoverTip);
+      shape.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showShapeCtxMenu(e, a.id); });
       g.appendChild(shape);
 
-      const c = boundsCenter(pts);
-      const rectW = 20, rectH = 20;
+      const c = labelPos(a, 'area');
+      const rectSize = a.thin ? 14 : 20;
       const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      rect.setAttribute('x', c.x - rectW/2); rect.setAttribute('y', c.y - rectH/2);
-      rect.setAttribute('width', rectW); rect.setAttribute('height', rectH);
+      rect.setAttribute('x', c.x - rectSize/2); rect.setAttribute('y', c.y - rectSize/2);
+      rect.setAttribute('width', rectSize); rect.setAttribute('height', rectSize);
       rect.setAttribute('rx', 5);
       rect.setAttribute('class', 'area-num-bg' + (selected ? ' selected' : ''));
       rect.setAttribute('fill', color);
@@ -983,15 +1112,19 @@
       num.setAttribute('x', c.x); num.setAttribute('y', c.y);
       num.setAttribute('class', 'arrow-num');
       num.style.fill = contrastTextColor(color);
+      num.style.fontSize = a.thin ? '8px' : '';
       num.textContent = nums[a.id];
 
       g.appendChild(rect); g.appendChild(num);
       svg.appendChild(g);
+
+      if (editing) renderEditHandles(a, 'area');
     });
 
     arrows.forEach((a) => {
       const color = a.color || DEFAULT_COLOR;
       const selected = a.id === selectedId;
+      const editing = a.id === editShapeId;
       const pts = a.points;
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
 
@@ -1003,6 +1136,7 @@
       hit.addEventListener('mouseenter', (e) => showHoverTip(a.note, e));
       hit.addEventListener('mousemove', (e) => moveHoverTip(e));
       hit.addEventListener('mouseleave', hideHoverTip);
+      hit.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showShapeCtxMenu(e, a.id); });
 
       const shaft = document.createElementNS('http://www.w3.org/2000/svg','path');
       shaft.setAttribute('d', pathData(pts));
@@ -1028,7 +1162,7 @@
 
       // for a bidirectional arrow both ends have arrowheads, so the number
       // badge is placed at the midpoint instead of the start to stay visible
-      const numPos = a.bidirectional ? pointAtT(pts, 0.5) : pts[0];
+      const numPos = labelPos(a, 'arrow');
 
       const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
       circle.setAttribute('cx', numPos.x); circle.setAttribute('cy', numPos.y);
@@ -1045,10 +1179,72 @@
 
       g.appendChild(circle); g.appendChild(num);
       svg.appendChild(g);
+
+      if (editing) renderEditHandles(a, 'arrow');
     });
   }
 
+  // ---------- shape-edit mode: draggable vertex + label handles ----------
+  function renderEditHandles(item, type){
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    item.points.forEach((p, i) => {
+      const h = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      h.setAttribute('cx', p.x); h.setAttribute('cy', p.y);
+      h.setAttribute('r', 7);
+      h.setAttribute('class', 'vertex-handle');
+      h.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); startVertexDrag(item, i); });
+      g.appendChild(h);
+    });
+    const lp = labelPos(item, type);
+    const lh = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    lh.setAttribute('cx', lp.x); lh.setAttribute('cy', lp.y);
+    lh.setAttribute('r', item.thin ? 9 : 12);
+    lh.setAttribute('class', 'label-handle');
+    lh.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); startLabelDrag(item, type); });
+    g.appendChild(lh);
+    svg.appendChild(g);
+  }
+
+  let dragCtx = null;
+  function startVertexDrag(item, index){
+    pushUndo();
+    dragCtx = { kind: 'vertex', item, index };
+  }
+  function startLabelDrag(item, type){
+    pushUndo();
+    dragCtx = { kind: 'label', item, rawBase: rawLabelBase(item, type) };
+  }
+  window.addEventListener('mousemove', (e) => {
+    if (!dragCtx) return;
+    const wc = toWorldCoords(e.clientX, e.clientY);
+    if (dragCtx.kind === 'vertex') {
+      dragCtx.item.points[dragCtx.index] = wc;
+    } else if (dragCtx.kind === 'label') {
+      dragCtx.item.labelOffset = { dx: wc.x - dragCtx.rawBase.x, dy: wc.y - dragCtx.rawBase.y };
+    }
+    renderArrows();
+  });
+  window.addEventListener('mouseup', () => {
+    if (dragCtx) { dragCtx = null; renderList(); scheduleSave(); }
+  });
+
+  function exitShapeEdit(){
+    if (editShapeId == null) return;
+    editShapeId = null;
+    document.getElementById('shapeEditBanner').classList.remove('open');
+    renderArrows();
+  }
+  function enterShapeEdit(id){
+    closePopup(true);
+    editShapeId = id;
+    selectedId = id;
+    document.getElementById('shapeEditBanner').classList.add('open');
+    renderArrows(); renderList();
+  }
+  document.getElementById('shapeEditDoneBtn').addEventListener('click', exitShapeEdit);
+
   let dragFromId = null;
+  let noteClickTimer = null;
   function renderList(){
     const combined = combinedSorted();
     if (combined.length === 0) {
@@ -1068,8 +1264,28 @@
       item.innerHTML = `<span class="note-grip" title="${t('dragHint')}">⠿⠿</span><span class="${shapeClass}" style="background:${color}; color:${contrastTextColor(color)}">${idx+1}</span><span class="body ${!hasNote ? 'empty' : ''}"></span>`;
       item.querySelector('.body').textContent = bodyText;
       item.addEventListener('click', () => {
-        selectedId = a.id;
-        renderArrows(); renderList(); focusOnItem(a, entry.type);
+        if (item.classList.contains('editing')) return;
+        // delay the single-click "select" action slightly so a following
+        // double-click (which edits the note) can cancel it — otherwise the
+        // immediate re-render here would remove this element before the
+        // dblclick event has a chance to fire on it
+        clearTimeout(noteClickTimer);
+        noteClickTimer = setTimeout(() => {
+          selectedId = a.id;
+          renderArrows(); renderList(); focusOnItem(a, entry.type);
+        }, 220);
+      });
+      item.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        showCtxMenu(e.clientX, e.clientY, [
+          { label: t('ctxEditNote'), onClick: () => startInlineNoteEdit(item, a) }
+        ]);
+      });
+      item.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        clearTimeout(noteClickTimer);
+        if (item.classList.contains('editing')) return;
+        startInlineNoteEdit(item, a);
       });
 
       // drag-and-drop reordering: grabbing the grip and dropping it on
@@ -1102,6 +1318,30 @@
       });
 
       noteList.appendChild(item);
+    });
+  }
+
+  function startInlineNoteEdit(item, a){
+    item.classList.add('editing');
+    item.draggable = false;
+    const bodySpan = item.querySelector('.body');
+    const ta = document.createElement('textarea');
+    ta.className = 'body-edit';
+    ta.value = a.note || '';
+    bodySpan.replaceWith(ta);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    let saved = false;
+    function save(){
+      if (saved) return;
+      saved = true;
+      a.note = ta.value;
+      scheduleSave();
+      renderList();
+    }
+    ta.addEventListener('blur', save);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); saved = true; renderList(); }
     });
   }
 
@@ -1287,6 +1527,7 @@
   const thinCheck = document.getElementById('thinCheck');
 
   function openPopupCommon(id, type, item){
+    if (editShapeId != null) exitShapeEdit();
     selectedId = id;
     noteText.value = item.note || '';
     noteText.placeholder = type === 'area' ? t('areaNotePlaceholder') : t('notePlaceholder');
@@ -1294,15 +1535,15 @@
     if (type === 'arrow') {
       bidirWrap.style.display = 'flex';
       bidirCheck.checked = !!item.bidirectional;
-      thinWrap.style.display = 'flex';
-      document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
-      // when "thin by default" is on, this checkbox instead offers a per-arrow
-      // override to make just this one thicker again
-      thinCheck.checked = thinDefault ? !item.thin : !!item.thin;
     } else {
       bidirWrap.style.display = 'none';
-      thinWrap.style.display = 'none';
     }
+    // thin-line toggle applies to both arrows and areas
+    thinWrap.style.display = 'flex';
+    document.getElementById('thinLabel').textContent = thinDefault ? t('thinLabelThick') : t('thinLabel');
+    // when "thin by default" is on, this checkbox instead offers a per-item
+    // override to make just this one thicker again
+    thinCheck.checked = thinDefault ? !item.thin : !!item.thin;
     popup.style.display = 'block';
     positionPopup(item, type);
     renderArrows(); renderList();
@@ -1337,7 +1578,7 @@
 
   thinCheck.addEventListener('change', () => {
     const found = findSelected();
-    if (found && found.type === 'arrow') {
+    if (found) {
       // when thin-by-default is on, a checked box means "make this one thick"
       found.item.thin = thinDefault ? !thinCheck.checked : thinCheck.checked;
       renderArrows(); scheduleSave();
@@ -1374,6 +1615,9 @@
   }
 
   document.getElementById('closePopupBtn').addEventListener('click', () => closePopup(true));
+  document.getElementById('editShapeBtn').addEventListener('click', () => {
+    if (selectedId != null) enterShapeEdit(selectedId);
+  });
   document.getElementById('deleteArrowBtn').addEventListener('click', () => {
     pushUndo();
     arrows = arrows.filter(a => a.id !== selectedId);
@@ -1435,6 +1679,7 @@
     if (inChrome(e)) return;
     if (e.button === 2) return;
     if (popup.style.display === 'block') closePopup(true);
+    if (editShapeId != null && !e.target.closest('.vertex-handle') && !e.target.closest('.label-handle')) exitShapeEdit();
     if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     isPanning = true;
     wrap.classList.add('panning');
@@ -1514,6 +1759,7 @@
     if (e.key === 'Escape') {
       if (isDrawingPath) { cancelDrawing(); }
       else if (isDrawingArea) { cancelAreaDrawing(); }
+      else if (editShapeId != null) { exitShapeEdit(); }
       else if (popup.style.display === 'block') { closePopup(true); }
     }
     const ctrlOrCmd = e.ctrlKey || e.metaKey;
@@ -1633,7 +1879,7 @@
     pushUndo();
     const id = idCounter++;
     const color = recentColors[0] || DEFAULT_COLOR;
-    areas.push({id, points: pts, note: '', color});
+    areas.push({id, points: pts, note: '', color, thin: thinDefault});
     areaPoints = [];
     renderArrows(); renderList(); scheduleSave();
     openPopupForNoHistory(id);
@@ -1663,7 +1909,21 @@
   });
 
   // ---------- export / import ----------
-  document.getElementById('exportBtn').addEventListener('click', () => {
+  const exportMenu = document.getElementById('exportMenu');
+  function closeExportMenu(){ exportMenu.classList.remove('open'); }
+  document.getElementById('exportBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportMenu.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!exportMenu.classList.contains('open')) return;
+    if (e.target.closest('#exportWrap')) return;
+    closeExportMenu();
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeExportMenu(); });
+
+  document.getElementById('exportJsonBtn').addEventListener('click', () => {
+    closeExportMenu();
     const f = files.find(x => x.id === currentFileId);
     const data = { name: f ? f.name : 'ArrowMap', arrows, areas, image: imgDataUrl, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
@@ -1674,6 +1934,72 @@
     a.click();
     URL.revokeObjectURL(url);
     showToast(t('toastExported'));
+  });
+
+  function loadImageAsync(src){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  document.getElementById('exportPngBtn').addEventListener('click', async () => {
+    closeExportMenu();
+    const {w,h} = worldSize();
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    try {
+      if (imgDataUrl) {
+        const img = await loadImageAsync(imgDataUrl);
+        ctx.drawImage(img, 0, 0, w, h);
+      }
+      // hide the vertex/label edit handles for a clean export, then restore
+      const wasEditing = editShapeId;
+      editShapeId = null;
+      renderArrows();
+      // the SVG is exported as a standalone document (Blob -> <img>), which has
+      // no access to the page's <style> stylesheet. Without it, classes like
+      // .arrow-shaft and .arrow-num fall back to SVG defaults (fill:black,
+      // stroke-width:1, default text anchoring), producing filled black
+      // wedges, hairline strokes, and mis-positioned number labels. Embedding
+      // the needed rules directly in the SVG makes it self-contained.
+      const exportStyle = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+      exportStyle.textContent = `
+        .arrow-hit { fill: none; }
+        .arrow-shaft { stroke-width: 4; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+        .arrow-shaft.selected { stroke-width: 5; }
+        .arrow-num { fill: #fff; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+        .bend-dot { fill: #fff; }
+      `;
+      svg.insertBefore(exportStyle, svg.firstChild);
+      const svgString = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+      const svgUrl = URL.createObjectURL(svgBlob);
+      const svgImg = await loadImageAsync(svgUrl);
+      ctx.drawImage(svgImg, 0, 0, w, h);
+      URL.revokeObjectURL(svgUrl);
+      editShapeId = wasEditing;
+      renderArrows();
+      canvas.toBlob((blob) => {
+        if (!blob) { showToast(t('toastPngExportFailed')); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const f = files.find(x => x.id === currentFileId);
+        a.download = 'arrowmap-' + (f ? f.name : 'memo') + '-' + new Date().toISOString().slice(0,10) + '.png';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(t('toastPngExported'));
+      }, 'image/png');
+    } catch(err) {
+      console.error('PNG export failed', err);
+      showToast(t('toastPngExportFailed'));
+    }
   });
 
   document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importInput').click());
