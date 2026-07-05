@@ -219,6 +219,22 @@
     opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 40;
   }
   #toast.show { opacity: 0.92; }
+  #hoverTip {
+    position: fixed;
+    display: none;
+    max-width: 260px;
+    background: rgba(20,20,20,0.92);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
 </style>
 </head>
 <body>
@@ -289,6 +305,7 @@
       </div>
     </div>
     <div id="toast"></div>
+    <div id="hoverTip"></div>
   </div>
   <div id="sidebar">
     <div id="sidebarHeader"></div>
@@ -408,6 +425,25 @@
   const placeholder = document.getElementById('placeholder');
   const popup = document.getElementById('popup');
   const noteText = document.getElementById('noteText');
+  const hoverTip = document.getElementById('hoverTip');
+  function showHoverTip(text, evt){
+    if (!text || !text.trim()) { hideHoverTip(); return; }
+    hoverTip.textContent = text;
+    hoverTip.style.display = 'block';
+    moveHoverTip(evt);
+  }
+  function moveHoverTip(evt){
+    if (hoverTip.style.display !== 'block') return;
+    const pad = 14;
+    let x = evt.clientX + pad;
+    let y = evt.clientY + pad;
+    const rect = hoverTip.getBoundingClientRect();
+    if (x + rect.width > window.innerWidth - 8) x = evt.clientX - rect.width - pad;
+    if (y + rect.height > window.innerHeight - 8) y = evt.clientY - rect.height - pad;
+    hoverTip.style.left = x + 'px';
+    hoverTip.style.top = y + 'px';
+  }
+  function hideHoverTip(){ hoverTip.style.display = 'none'; }
   const colorRow = document.getElementById('colorRow');
   const noteList = document.getElementById('noteList');
   const toast = document.getElementById('toast');
@@ -751,6 +787,19 @@
     return points[points.length - 1];
   }
   function colorId(hex){ return hex.replace('#','').toLowerCase(); }
+  // returns '#000' or '#fff' depending on which is more readable on top of the given hex color
+  function contrastTextColor(hex){
+    if (!hex) return '#fff';
+    const h = hex.replace('#','');
+    const full = h.length === 3 ? h.split('').map(c => c+c).join('') : h;
+    const r = parseInt(full.substring(0,2), 16);
+    const g = parseInt(full.substring(2,4), 16);
+    const b = parseInt(full.substring(4,6), 16);
+    if ([r,g,b].some(v => Number.isNaN(v))) return '#fff';
+    // relative luminance (perceived brightness)
+    const luminance = (0.299*r + 0.587*g + 0.114*b) / 255;
+    return luminance > 0.62 ? '#000' : '#fff';
+  }
 
   // ---------- smoothing for area outlines (closed Catmull-Rom -> cubic Bezier) ----------
   // Keeps the shape (concave/convex bumps) the user actually clicked, but
@@ -856,6 +905,9 @@
       shape.setAttribute('stroke-width', '2');
       shape.addEventListener('mousedown', (e) => e.stopPropagation());
       shape.addEventListener('click', (e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.stopPropagation(); openPopupFor(a.id); });
+      shape.addEventListener('mouseenter', (e) => showHoverTip(a.note, e));
+      shape.addEventListener('mousemove', (e) => moveHoverTip(e));
+      shape.addEventListener('mouseleave', hideHoverTip);
       g.appendChild(shape);
 
       const c = boundsCenter(pts);
@@ -870,6 +922,7 @@
       const num = document.createElementNS('http://www.w3.org/2000/svg','text');
       num.setAttribute('x', c.x); num.setAttribute('y', c.y);
       num.setAttribute('class', 'arrow-num');
+      num.style.fill = contrastTextColor(color);
       num.textContent = nums[a.id];
 
       g.appendChild(rect); g.appendChild(num);
@@ -887,6 +940,9 @@
       hit.setAttribute('class', 'arrow-hit');
       hit.addEventListener('mousedown', (e) => e.stopPropagation());
       hit.addEventListener('click', (e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.stopPropagation(); openPopupFor(a.id); });
+      hit.addEventListener('mouseenter', (e) => showHoverTip(a.note, e));
+      hit.addEventListener('mousemove', (e) => moveHoverTip(e));
+      hit.addEventListener('mouseleave', hideHoverTip);
 
       const shaft = document.createElementNS('http://www.w3.org/2000/svg','path');
       shaft.setAttribute('d', pathData(pts));
@@ -920,6 +976,7 @@
       const num = document.createElementNS('http://www.w3.org/2000/svg','text');
       num.setAttribute('x', numPos.x); num.setAttribute('y', numPos.y);
       num.setAttribute('class', 'arrow-num');
+      num.style.fill = contrastTextColor(color);
       num.textContent = nums[a.id];
 
       g.appendChild(circle); g.appendChild(num);
